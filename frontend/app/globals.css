@@ -1,0 +1,161 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 222 38% 7%;
+    --foreground: 210 40% 98%;
+    --surface: 221 33% 11%;
+    --card: 215 31% 15%;
+    --primary: 218 100% 65%;
+    --accent: 253 91% 67%;
+    --success: 142 71% 45%;
+    --warning: 38 92% 50%;
+    --danger: 0 84% 60%;
+    --muted: 217 19% 20%;
+    --muted-foreground: 215 20% 65%;
+    --border: 217 22% 22%;
+    --ring: 218 100% 65%;
+
+    /* Cursor spotlight */
+    --cursor-x: 50%;
+    --cursor-y: 50%;
+  }
+
+  .light {
+    --background: 210 40% 98%;
+    --foreground: 222 47% 11%;
+    --surface: 0 0% 100%;
+    --card: 210 40% 96%;
+    --primary: 218 89% 54%;
+    --accent: 253 74% 60%;
+    --success: 142 71% 35%;
+    --warning: 32 95% 44%;
+    --danger: 0 72% 51%;
+    --muted: 214 32% 91%;
+    --muted-foreground: 215 16% 47%;
+    --border: 214 24% 87%;
+    --ring: 218 89% 54%;
+  }
+
+  /* Smooth scrolling — respects reduced motion */
+  @media (prefers-reduced-motion: no-preference) {
+    html {
+      scroll-behavior: smooth;
+    }
+  }
+
+  /* Global reduced-motion override */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  html {
+    @apply bg-background;
+  }
+
+  body {
+    @apply min-h-screen bg-background text-foreground antialiased;
+    font-family: var(--font-ui), Inter, ui-sans-serif, system-ui, sans-serif;
+  }
+
+  code,
+  pre {
+    font-family: var(--font-code), "JetBrains Mono", ui-monospace, monospace;
+  }
+
+  /* Focus visible ring — consistent across all interactive elements */
+  :focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+}
+
+@layer utilities {
+  /* Glass surface */
+  .surface-glass {
+    @apply border border-white/10 bg-surface/80 shadow-glow backdrop-blur-xl;
+  }
+
+  /* Dark-mode glass override */
+  .dark .surface-glass {
+    @apply border-white/10;
+  }
+
+  /* Focus ring utility */
+  .focus-ring {
+    @apply outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background;
+  }
+
+  /* Subtle dot grid background */
+  .bg-grid {
+    background-image: radial-gradient(
+      circle,
+      hsl(var(--border)) 1px,
+      transparent 1px
+    );
+    background-size: 24px 24px;
+  }
+
+  /* Cursor-reactive spotlight */
+  .cursor-spotlight {
+    background: radial-gradient(
+      600px circle at var(--cursor-x) var(--cursor-y),
+      hsl(var(--primary) / 0.06),
+      transparent 60%
+    );
+  }
+
+  /* Gradient text */
+  .text-gradient {
+    @apply bg-clip-text text-transparent;
+    background-image: linear-gradient(
+      135deg,
+      hsl(var(--primary)) 0%,
+      hsl(var(--accent)) 100%
+    );
+  }
+
+  /* Section padding */
+  .section-padding {
+    @apply px-6 py-24 md:py-32;
+  }
+
+  /* Max content width */
+  .content-width {
+    @apply mx-auto max-w-7xl;
+  }
+
+  /* Highlight on hover — subtle */
+  .highlight-hover {
+    @apply transition-colors duration-200 hover:bg-muted/40;
+  }
+
+  /* Typing cursor blink */
+  .cursor-blink::after {
+    content: "|";
+    @apply ml-0.5 animate-typing-cursor text-primary;
+  }
+
+  /* No scrollbar utility */
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+}

@@ -1,0 +1,1 @@
+{"dialect": "sqlite+aiosqlite", "event": "database_engine_configured", "level": "info", "timestamp": "2026-07-30T17:59:26.303644Z"}
