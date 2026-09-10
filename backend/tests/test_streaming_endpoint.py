@@ -13,7 +13,7 @@ from uuid import uuid4
 from fastapi import FastAPI, status
 from fastapi.testclient import TestClient
 
-from app.api.v1.dependencies import get_query_pipeline
+from app.api.v1.dependencies import get_authorized_repository, get_query_pipeline
 from app.api.v1.routes.query import router
 from app.modules.orchestrator.models import (
     Citation,
@@ -35,9 +35,16 @@ def _make_response(
 
 
 def _app_with_mock_pipeline(pipeline: Any) -> FastAPI:
+    """Build a test app with the pipeline mocked and ownership already authorized.
+
+    Authentication/ownership are exercised in their own dedicated tests
+    (test_repository_service.py, test_auth.py); these tests are about
+    transport-layer delegation to the pipeline.
+    """
     app = FastAPI()
     app.include_router(router)
     app.dependency_overrides[get_query_pipeline] = lambda: pipeline
+    app.dependency_overrides[get_authorized_repository] = lambda: None
     return app
 
 

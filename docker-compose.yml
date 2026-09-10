@@ -1,11 +1,46 @@
 services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-repomind}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-repomind}
+      POSTGRES_DB: ${POSTGRES_DB:-repomind}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-repomind} -d ${POSTGRES_DB:-repomind}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
   backend:
     build:
       context: .
       dockerfile: Dockerfile
     env_file: .env
+    # Lets EMBEDDING_BASE_URL=http://host.docker.internal:11434 reach a host-run
+    # Ollama instance. Docker Desktop (Windows/Mac) provides this hostname
+    # already; on Linux Docker Engine it requires this explicit mapping.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      postgres:
+        condition: service_healthy
     ports:
       - "${BACKEND_PORT:-8000}:8000"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health/ready')",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
     restart: unless-stopped
 
   frontend:
@@ -13,9 +48,13 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
     environment:
       BACKEND_API_URL: http://backend:8000
     ports:
       - "${FRONTEND_PORT:-3000}:3000"
     restart: unless-stopped
+
+volumes:
+  postgres_data:

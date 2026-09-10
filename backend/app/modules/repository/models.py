@@ -16,6 +16,14 @@ class Repository(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
     __tablename__ = "repositories"
 
+    # Nullable at the DB level even though every code path that creates a
+    # Repository (RepositoryService.register) always supplies a real value:
+    # rows from before ownership existed have no truthful owner to backfill,
+    # and NULL sorts before "silently invented" -- it compares unequal to
+    # every real owner_id, so such rows simply become inaccessible through
+    # the app rather than misattributed to a Clerk user who never created
+    # them. See migration 0009_add_repository_owner_id for the full reasoning.
+    owner_id: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     url: Mapped[str] = mapped_column(String(2048), nullable=False, unique=True)
     provider: Mapped[RepositoryProvider] = mapped_column(

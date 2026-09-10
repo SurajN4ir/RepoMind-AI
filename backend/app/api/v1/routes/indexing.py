@@ -9,7 +9,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, status
 
-from app.api.v1.dependencies import IndexingPipelineDependency
+from app.api.v1.dependencies import AuthorizedRepositoryDependency, IndexingPipelineDependency
 from app.api.v1.routes.schemas import IndexingResponse
 
 router = APIRouter(prefix="/repositories", tags=["indexing"])
@@ -22,6 +22,7 @@ router = APIRouter(prefix="/repositories", tags=["indexing"])
 async def index_repository(
     repository_id: UUID,
     pipeline: IndexingPipelineDependency,
+    _authorized: AuthorizedRepositoryDependency,
 ) -> IndexingResponse:
     """Clone, walk, parse, chunk, embed, and index a registered repository.
 

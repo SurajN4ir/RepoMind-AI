@@ -3,6 +3,9 @@ import type { NextConfig } from "next";
 const backendUrl = process.env.BACKEND_API_URL ?? "http://localhost:8000";
 
 const nextConfig: NextConfig = {
+  // Required for frontend/Dockerfile's runtime stage, which copies
+  // .next/standalone -- without this, Next.js never produces that directory.
+  output: "standalone",
   async rewrites() {
     return [{ source: "/api/:path*", destination: `${backendUrl}/api/:path*` }];
   },

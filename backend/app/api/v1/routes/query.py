@@ -11,7 +11,7 @@ from uuid import UUID
 from fastapi import APIRouter, HTTPException, status
 from starlette.responses import StreamingResponse
 
-from app.api.v1.dependencies import QueryPipelineDependency
+from app.api.v1.dependencies import AuthorizedRepositoryDependency, QueryPipelineDependency
 from app.api.v1.routes.schemas import QueryRequest, QueryResponse
 from app.modules.orchestrator.models import StreamEvent, StreamEventType
 from app.modules.query_engine.models import UserRequest
@@ -27,6 +27,7 @@ async def query_repository(
     repository_id: UUID,
     body: QueryRequest,
     pipeline: QueryPipelineDependency,
+    _authorized: AuthorizedRepositoryDependency,
 ) -> QueryResponse:
     """Plan, retrieve, build context, and respond to a user query.
 
@@ -82,6 +83,7 @@ async def query_repository_stream(
     repository_id: UUID,
     body: QueryRequest,
     pipeline: QueryPipelineDependency,
+    _authorized: AuthorizedRepositoryDependency,
 ) -> StreamingResponse:
     """Plan, retrieve, build context, and stream a response token by token.
 

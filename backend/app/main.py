@@ -1,11 +1,12 @@
 """FastAPI application factory."""
 
+import asyncio
+import sys
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import text
 
 from app.api.v1.router import api_v1_router
 from app.config.settings import get_settings
@@ -14,6 +15,13 @@ from app.middleware.error_handler import register_error_handlers
 from app.middleware.request_context import RequestContextMiddleware
 from app.shared.database.base import Base
 from app.shared.database.session import dispose_engine, get_engine
+
+if sys.platform == "win32":
+    # psycopg's async driver cannot run on Windows's default ProactorEventLoop;
+    # it requires a SelectorEventLoop. No-op on Linux/Docker, where the app
+    # actually runs in deployment -- this only matters for native Windows dev
+    # against a real PostgreSQL database (SQLite via aiosqlite is unaffected).
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 
 @asynccontextmanager

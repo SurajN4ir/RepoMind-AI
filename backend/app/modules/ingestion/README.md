@@ -2,25 +2,41 @@
 
 ## Purpose
 
-Create a disposable local workspace for a registered repository and produce a clean file manifest.
+Provide the low-level primitives for turning a registered repository into a
+local, filtered file inventory: a depth-one Git clone and a pure
+`RepositoryManifest` domain object. This module does not orchestrate an
+ingestion workflow itself.
 
 ## Responsibilities
 
-- Perform a depth-one Git clone into a temporary workspace.
-- Apply configurable directory, binary, and file-size filtering.
-- Walk accepted files and return pure `RepositoryManifest` domain objects.
-- Transition Repository status through `RepositoryService` only.
-- Remove temporary workspaces on success and failure.
+- Perform a depth-one Git clone (`GitClient`).
+- Apply configurable directory, binary, and file-size filtering
+  (`RepositoryFileFilter`, `IngestionFilterConfig`).
+- Walk accepted files and return pure `RepositoryManifest` domain objects
+  (`RepositoryWalker`).
+- Serialize manifests for HTTP responses (`RepositoryManifestResponse`).
+
+## Who orchestrates this
+
+`RepositoryIndexingPipeline` (`backend/app/application/pipelines/repository_indexing_pipeline.py`)
+is the canonical caller: it owns workspace lifecycle, repository status
+transitions, and error recovery, then continues on to parsing, chunking,
+embedding, and indexing. This module does not manage workspace cleanup or
+Repository status itself -- an earlier `IngestionService` did, as a
+standalone orchestrator reachable only via `POST .../ingest`; it duplicated
+what the pipeline does and was removed (see
+`docs/adr/0015-legacy-ingestion-endpoint-delegates-to-indexing-pipeline.md`).
 
 ## Public API
 
-- `POST /api/v1/repositories/{id}/ingest`
+- `POST /api/v1/repositories/{id}/ingest` -- deprecated; a thin adapter that
+  runs the canonical pipeline and reports only its manifest. See
+  `app/api/v1/routes/legacy_ingestion.py`.
 
 ## Dependencies
 
-- Repository module service for repository metadata and lifecycle transitions.
+- Local Git executable and filesystem.
 - Shared UTC clock for manifest timestamps.
-- Local Git executable, filesystem, and temporary workspace facilities.
 
 ## Non-goals
 
@@ -28,8 +44,5 @@ Create a disposable local workspace for a registered repository and produce a cl
   or documentation generation.
 - Persisting manifests or file records.
 - Provider API calls beyond `git clone`.
-
-## Future work
-
-- A separate parsing/chunking module may consume the manifest as an input contract.
-- Persist manifest metadata only if a future bounded context explicitly requires it.
+- Workspace lifecycle and Repository status transitions (owned by
+  `RepositoryIndexingPipeline`).

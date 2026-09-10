@@ -2,7 +2,7 @@
 
 import { useState, useRef, useCallback } from "react";
 
-import { API } from "@/lib/constants";
+import { buildUrl, getAuthHeaders } from "@/services/api-client";
 
 interface StreamCallbacks {
   onToken: (token: string) => void;
@@ -35,10 +35,13 @@ export function useChatStream() {
       let fullText = "";
 
       try {
-        const url = `${API.baseUrl}/api/repositories/${params.repositoryId}/query/stream`;
+        const url = buildUrl(`/api/repositories/${params.repositoryId}/query/stream`);
         const response = await fetch(url, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            ...(await getAuthHeaders()),
+          },
           body: JSON.stringify({
             text: params.query,
             conversation_id: getConversationId(),
@@ -72,18 +75,26 @@ export function useChatStream() {
                 const data = line.slice(6);
                 if (data === "[DONE]") break;
 
+                let parsed: { type?: string; token?: string; sources?: unknown; detail?: string } | undefined;
                 try {
-                  const parsed = JSON.parse(data);
-                  if (parsed.token) {
-                    fullText += parsed.token;
-                    callbacks.onToken(parsed.token);
-                  }
-                  if (parsed.sources) {
-                    callbacks.onSources?.(parsed.sources);
-                  }
+                  parsed = JSON.parse(data);
                 } catch {
                   fullText += data;
                   callbacks.onToken(data);
+                  continue;
+                }
+
+                if (parsed?.type === "ERROR") {
+                  throw new Error(parsed.detail || "Query pipeline execution failed.");
+                }
+                if (parsed?.token) {
+                  fullText += parsed.token;
+                  callbacks.onToken(parsed.token);
+                }
+                if (parsed?.sources) {
+                  callbacks.onSources?.(
+                    parsed.sources as { filePath: string; lineStart: number; lineEnd: number }[],
+                  );
                 }
               }
             }

@@ -5,7 +5,12 @@ from uuid import UUID
 from fastapi import APIRouter, Query
 from pydantic import BaseModel
 
-from app.api.v1.dependencies import FileContentStoreDependency
+from app.api.v1.dependencies import (
+    CurrentUserDependency,
+    FileContentStoreDependency,
+    RepositoryAppServiceDependency,
+)
+from app.application.exceptions import ApplicationError
 
 router = APIRouter(prefix="/search", tags=["search"])
 
@@ -24,15 +29,23 @@ class SearchResultItem(BaseModel):
 @router.get("", response_model=list[SearchResultItem])
 async def search(
     store: FileContentStoreDependency,
+    repository_service: RepositoryAppServiceDependency,
+    current_user: CurrentUserDependency,
     q: str = Query(..., min_length=1),
     repository_id: str | None = Query(None),
     limit: int = Query(default=10, ge=1, le=100),
 ) -> list[SearchResultItem]:
-    """Search indexed files by path matching."""
+    """Search indexed files by path matching, scoped to a repository the caller owns."""
     if repository_id:
         try:
             repo_uuid = UUID(repository_id)
         except ValueError:
+            return []
+        try:
+            await repository_service.get(repo_uuid, current_user.user_id)
+        except ApplicationError:
+            # Same "no results" response for a bad id, someone else's
+            # repository, or one that doesn't exist -- never distinguish them.
             return []
         hashes = await store.get_file_path_hashes(repo_uuid)
     else:

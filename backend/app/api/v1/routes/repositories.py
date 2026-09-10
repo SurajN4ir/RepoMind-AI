@@ -8,6 +8,8 @@ from pydantic import BaseModel
 
 from app.api.v1.dependencies import (
     ActivityStoreDependency,
+    AuthorizedRepositoryDependency,
+    CurrentUserDependency,
     DependencyStoreDependency,
     FileContentStoreDependency,
     RepositoryAppServiceDependency,
@@ -29,11 +31,12 @@ router = APIRouter(prefix="/repositories", tags=["repositories"])
 async def create_repository(
     request: CreateRepositoryRequest,
     service: RepositoryAppServiceDependency,
+    current_user: CurrentUserDependency,
     response: Response,
 ) -> RepositoryResponse:
-    """Register repository metadata without performing any ingestion work."""
+    """Register repository metadata, owned by the caller, without performing ingestion."""
     try:
-        repository = await service.register(request)
+        repository = await service.register(request, current_user.user_id)
     except ApplicationError as exc:
         raise to_http_exception(exc) from exc
     response.headers["Location"] = f"/api/v1/repositories/{repository.id}"
@@ -43,12 +46,15 @@ async def create_repository(
 @router.get("", response_model=RepositoryListResponse)
 async def list_repositories(
     service: RepositoryAppServiceDependency,
+    current_user: CurrentUserDependency,
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=25, ge=1, le=100),
 ) -> RepositoryListResponse:
-    """List registered repositories using offset pagination."""
+    """List the caller's own repositories using offset pagination."""
     try:
-        result = await service.list(PaginationParams(page=page, page_size=page_size))
+        result = await service.list(
+            PaginationParams(page=page, page_size=page_size), current_user.user_id
+        )
     except ApplicationError as exc:
         raise to_http_exception(exc) from exc
     return RepositoryListResponse(
@@ -62,18 +68,13 @@ async def list_repositories(
 
 @router.get("/{repository_id}", response_model=RepositoryResponse)
 async def get_repository(
-    repository_id: UUID,
-    service: RepositoryAppServiceDependency,
+    repository: AuthorizedRepositoryDependency,
     store: FileContentStoreDependency,
 ) -> RepositoryResponse:
-    """Return one registered repository with computed indexing metrics."""
-    try:
-        repo = await service.get(repository_id)
-        response = RepositoryResponse.model_validate(repo)
-        response.indexed_file_count = await store.get_file_count(repository_id)
-        return response
-    except ApplicationError as exc:
-        raise to_http_exception(exc) from exc
+    """Return one repository owned by the caller, with computed indexing metrics."""
+    response = RepositoryResponse.model_validate(repository)
+    response.indexed_file_count = await store.get_file_count(repository.id)
+    return response
 
 
 @router.patch("/{repository_id}", response_model=RepositoryResponse)
@@ -81,10 +82,12 @@ async def update_repository(
     repository_id: UUID,
     request: UpdateRepositoryRequest,
     service: RepositoryAppServiceDependency,
+    current_user: CurrentUserDependency,
 ) -> RepositoryResponse:
-    """Update repository metadata or its lifecycle status."""
+    """Update metadata or lifecycle status for a repository the caller owns."""
     try:
-        return RepositoryResponse.model_validate(await service.update(repository_id, request))
+        updated = await service.update(repository_id, request, current_user.user_id)
+        return RepositoryResponse.model_validate(updated)
     except ApplicationError as exc:
         raise to_http_exception(exc) from exc
 
@@ -93,10 +96,11 @@ async def update_repository(
 async def delete_repository(
     repository_id: UUID,
     service: RepositoryAppServiceDependency,
+    current_user: CurrentUserDependency,
 ) -> Response:
-    """Delete a repository record; external repository work is out of scope."""
+    """Delete a repository record the caller owns; external cleanup is out of scope."""
     try:
-        await service.delete(repository_id)
+        await service.delete(repository_id, current_user.user_id)
     except ApplicationError as exc:
         raise to_http_exception(exc) from exc
     return Response(status_code=status.HTTP_204_NO_CONTENT)
@@ -124,9 +128,10 @@ def _validate_file_path(file_path: str) -> str:
 async def get_file_content(
     repository_id: UUID,
     store: FileContentStoreDependency,
+    _authorized: AuthorizedRepositoryDependency,
     file_path: str = Query(..., description="Path to the file within the repository"),
 ) -> FileContentResponse:
-    """Return the full content of a file within a repository."""
+    """Return the full content of a file within a repository the caller owns."""
     safe_path = _validate_file_path(file_path)
     record = await store.get_file_content(repository_id, safe_path)
     if record is None:
@@ -209,8 +214,9 @@ def _build_file_tree(file_paths: list[str]) -> list[FileNodeResponse]:
 async def get_repository_file_tree(
     repository_id: UUID,
     store: FileContentStoreDependency,
+    _authorized: AuthorizedRepositoryDependency,
 ) -> FileTreeResponse:
-    """Return the hierarchical file tree for a repository."""
+    """Return the hierarchical file tree for a repository the caller owns."""
     hashes = await store.get_file_path_hashes(repository_id)
     paths = list(hashes.keys())
     items = _build_file_tree(paths)
@@ -221,8 +227,9 @@ async def get_repository_file_tree(
 async def get_repository_graph(
     repository_id: UUID,
     store: DependencyStoreDependency,
+    _authorized: AuthorizedRepositoryDependency,
 ) -> GraphResponse:
-    """Return the resolved dependency graph for a repository.
+    """Return the resolved dependency graph for a repository the caller owns.
 
     Nodes are the indexed file paths; edges represent import relationships
     resolved during the last successful indexing run.
@@ -260,8 +267,9 @@ class ActivityEventResponse(BaseModel):
 async def get_repository_activity(
     repository_id: UUID,
     store: ActivityStoreDependency,
+    _authorized: AuthorizedRepositoryDependency,
 ) -> list[ActivityEventResponse]:
-    """Return recent activity events for the repository."""
+    """Return recent activity events for a repository the caller owns."""
     events = await store.get_activity(repository_id)
     return [
         ActivityEventResponse(

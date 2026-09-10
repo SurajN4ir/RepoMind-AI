@@ -9,16 +9,6 @@ export const ROUTES = {
   settings: "/settings",
 } as const;
 
-export const API = {
-  baseUrl: process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000",
-  endpoints: {
-    health: "/api/health",
-    repositories: "/api/repositories",
-    search: "/api/search",
-    query: "/api/query",
-  },
-} as const;
-
 export const QUERY_KEYS = {
   repositories: ["repositories"] as const,
   repository: (id: string) => ["repositories", id] as const,

@@ -2,9 +2,11 @@
 
 from uuid import UUID
 
+from pgvector.sqlalchemy import Vector
 from sqlalchemy import JSON, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
+from app.config.settings import get_settings
 from app.shared.database.base import Base
 from app.shared.database.mixins import TimestampMixin, UUIDPrimaryKeyMixin
 
@@ -45,7 +47,12 @@ class IndexEntryModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
     document_id: Mapped[str] = mapped_column(String(255), nullable=False)
     repository_id: Mapped[UUID] = mapped_column(nullable=False, index=True)
-    embedding: Mapped[list[float]] = mapped_column(JSON, nullable=False)
+    # JSON on SQLite (dev/tests); a real pgvector column on PostgreSQL, sized from
+    # settings so it always matches the configured embedding provider's output width.
+    embedding: Mapped[list[float]] = mapped_column(
+        JSON().with_variant(Vector(get_settings().embedding_dimensions), "postgresql"),
+        nullable=False,
+    )
     text: Mapped[str] = mapped_column(Text, nullable=False)
     entry_metadata: Mapped[dict] = mapped_column("metadata", JSON, nullable=False, default=dict)
     content_hash: Mapped[str] = mapped_column(String(64), nullable=False)

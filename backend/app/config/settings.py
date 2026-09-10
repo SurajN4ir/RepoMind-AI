@@ -30,6 +30,16 @@ class Settings(BaseSettings):
     ingestion_max_file_size_bytes: int = 1_048_576
     embedding_model: str = "all-minilm:l6-v2"
     embedding_base_url: str = "http://localhost:11434"
+    # Vector width for embedding_model (all-minilm:l6-v2 -> 384). Sizes the pgvector
+    # column; changing to a model with a different width requires a new migration.
+    embedding_dimensions: int = 384
+    generation_model: str = "llama3.2"
+    generation_base_url: str = "http://localhost:11434"
+    # Public key endpoint for verifying Clerk-issued session JWTs (not a secret).
+    # Find it under your Clerk instance's Frontend API settings, e.g.
+    # https://<your-instance>.clerk.accounts.dev/.well-known/jwks.json
+    clerk_jwks_url: str = ""
+    clerk_issuer: str | None = None
 
     @property
     def debug(self) -> bool:

@@ -44,8 +44,8 @@ class RepositoryService:
         self._session = session
         self._repository = repository
 
-    async def register(self, request: CreateRepositoryRequest) -> Repository:
-        """Register a unique repository and mark it as registered."""
+    async def register(self, request: CreateRepositoryRequest, owner_id: str) -> Repository:
+        """Register a unique repository, owned by the caller, and mark it registered."""
         self._validate_provider(request.provider)
         url = self._validate_url(request.url, request.provider)
         name = self._validate_required_text(request.name, "name")
@@ -58,6 +58,7 @@ class RepositoryService:
                     )
                 return await self._repository.add(
                     Repository(
+                        owner_id=owner_id,
                         name=name,
                         url=url,
                         provider=request.provider,
@@ -74,8 +75,30 @@ class RepositoryService:
         except PersistenceError as exc:
             raise RepositoryPersistenceError("Could not register repository.") from exc
 
-    async def get(self, repository_id: UUID) -> Repository:
-        """Fetch one registered repository or raise a feature-local not-found error."""
+    async def get(self, repository_id: UUID, owner_id: str) -> Repository:
+        """Fetch one repository owned by the caller.
+
+        Raises the same not-found error for "doesn't exist" and "exists but
+        belongs to someone else" -- callers must not be able to distinguish
+        the two, or they could enumerate other users' repository ids.
+        """
+        try:
+            async with transaction(self._session):
+                repository = await self._repository.get(repository_id)
+        except PersistenceError as exc:
+            raise RepositoryPersistenceError("Could not fetch repository.") from exc
+        if repository is None or repository.owner_id != owner_id:
+            raise RepositoryNotFoundError("Repository was not found.")
+        return repository
+
+    async def get_trusted(self, repository_id: UUID) -> Repository:
+        """Fetch a repository without an ownership check.
+
+        For internal callers only (indexing/ingestion pipelines) that
+        received this repository_id from a route which already authorized
+        it via ``get()``. Never call this with a client-supplied
+        repository_id that hasn't already gone through that check.
+        """
         try:
             async with transaction(self._session):
                 repository = await self._repository.get(repository_id)
@@ -85,20 +108,22 @@ class RepositoryService:
             raise RepositoryNotFoundError("Repository was not found.")
         return repository
 
-    async def list(self, pagination: PaginationParams) -> Page[Repository]:
-        """List registered repositories using shared pagination semantics."""
+    async def list(self, pagination: PaginationParams, owner_id: str) -> Page[Repository]:
+        """List repositories owned by the caller using shared pagination semantics."""
         try:
             async with transaction(self._session):
-                return await self._repository.list(pagination)
+                return await self._repository.list_by_owner(owner_id, pagination)
         except PersistenceError as exc:
             raise RepositoryPersistenceError("Could not list repositories.") from exc
 
-    async def update(self, repository_id: UUID, request: UpdateRepositoryRequest) -> Repository:
-        """Update allowed metadata and lifecycle fields for a registered repository."""
+    async def update(
+        self, repository_id: UUID, request: UpdateRepositoryRequest, owner_id: str
+    ) -> Repository:
+        """Update allowed metadata and lifecycle fields for a repository the caller owns."""
         changes = request.model_dump(exclude_unset=True)
         try:
             async with transaction(self._session):
-                repository = await self._get_or_raise(repository_id)
+                repository = await self._get_or_raise(repository_id, owner_id)
                 provider = changes.get("provider", repository.provider)
                 self._validate_provider(provider)
                 url = self._validate_url(changes.get("url", repository.url), provider)
@@ -140,26 +165,39 @@ class RepositoryService:
         last_indexed_at: datetime | None = None,
         total_files: int | None = None,
     ) -> Repository:
-        """Update lifecycle status for use by this or future bounded contexts."""
-        changes: dict[str, object] = {"status": status}
-        if last_indexed_at is not None:
-            changes["last_indexed_at"] = last_indexed_at
-        if total_files is not None:
-            changes["total_files"] = total_files
-        return await self.update(repository_id, UpdateRepositoryRequest.model_validate(changes))
+        """Update lifecycle status for use by this or future bounded contexts.
 
-    async def delete(self, repository_id: UUID) -> None:
-        """Delete a registered repository record without performing external cleanup."""
+        Trusted-internal: only called by pipelines that already ran an
+        ownership check at the API boundary before starting work, so it does
+        not repeat one here (it has no caller identity to check against).
+        """
         try:
             async with transaction(self._session):
-                repository = await self._get_or_raise(repository_id)
+                repository = await self._repository.get(repository_id)
+                if repository is None:
+                    raise RepositoryNotFoundError("Repository was not found.")
+                self._validate_status_transition(repository.status, status)
+                repository.status = status
+                if last_indexed_at is not None:
+                    repository.last_indexed_at = last_indexed_at
+                if total_files is not None:
+                    repository.total_files = total_files
+                return await self._repository.update(repository)
+        except PersistenceError as exc:
+            raise RepositoryPersistenceError("Could not update repository.") from exc
+
+    async def delete(self, repository_id: UUID, owner_id: str) -> None:
+        """Delete a repository record the caller owns, without external cleanup."""
+        try:
+            async with transaction(self._session):
+                repository = await self._get_or_raise(repository_id, owner_id)
                 await self._repository.delete(repository)
         except PersistenceError as exc:
             raise RepositoryPersistenceError("Could not delete repository.") from exc
 
-    async def _get_or_raise(self, repository_id: UUID) -> Repository:
+    async def _get_or_raise(self, repository_id: UUID, owner_id: str) -> Repository:
         repository = await self._repository.get(repository_id)
-        if repository is None:
+        if repository is None or repository.owner_id != owner_id:
             raise RepositoryNotFoundError("Repository was not found.")
         return repository
 

@@ -1,16 +1,19 @@
 """Create conversations and messages tables.
 
-Revision ID: 0006_create_conversations_and_messages
-Revises: 0005_add_total_files_and_activity_events
+Revision ID: 0006_conversations
+Revises: 0005_activity_events
 Create Date: 2026-07-29
+
+Note: shortened revision id -- see 0005_add_total_files_and_activity_events.py
+for why every revision id here must stay within 32 characters.
 """
 
 import sqlalchemy as sa
 
 from alembic import op
 
-revision = "0006_create_conversations_and_messages"
-down_revision = "0005_add_total_files_and_activity_events"
+revision = "0006_conversations"
+down_revision = "0005_activity_events"
 branch_labels = None
 depends_on = None
 

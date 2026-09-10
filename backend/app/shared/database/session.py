@@ -20,7 +20,10 @@ def build_async_engine(settings: Settings) -> AsyncEngine:
     """Create an async engine without opening a database connection."""
     logger.info("database_engine_configured", dialect=settings.database_url.split(":", 1)[0])
     connect_args: dict[str, object] = {}
-    options: dict[str, bool | int | dict[str, object]] = {"echo": settings.database_echo, "pool_pre_ping": True}
+    options: dict[str, bool | int | dict[str, object]] = {
+        "echo": settings.database_echo,
+        "pool_pre_ping": True,
+    }
     if settings.database_url.startswith("sqlite"):
         connect_args["check_same_thread"] = False
     else:
@@ -45,13 +48,48 @@ def get_session_factory() -> async_sessionmaker[AsyncSession]:
 
 
 async def get_db_session() -> AsyncGenerator[AsyncSession]:
-    """Yield a request-scoped session; transaction ownership remains explicit."""
+    """Yield a request-scoped session; commit on success, roll back on failure.
+
+    Modules use ``app.shared.database.transactions.transaction()`` for
+    explicit unit-of-work boundaries within a request, but those calls begin
+    a *nested* transaction (SAVEPOINT) whenever the session already has one
+    open -- which happens the moment any earlier write auto-begins one. Only
+    an outermost commit actually persists to disk; without one here, writes
+    made after the first `transaction()` call in a request (e.g. anything
+    after a repository status update) build up in that auto-begun
+    transaction and silently roll back when the session closes.
+    """
     async with get_session_factory()() as session:
         logger.debug("database_session_opened")
         try:
             yield session
+            await session.commit()
+        except Exception:
+            await session.rollback()
+            raise
         finally:
             logger.debug("database_session_closed")
+
+
+async def get_secondary_db_session() -> AsyncGenerator[AsyncSession]:
+    """Yield a second, independent request-scoped session.
+
+    SQLAlchemy's AsyncSession is not safe for concurrent use by two
+    coroutines. RetrievalService runs its vector and keyword read ports
+    concurrently via asyncio.gather, so those two ports must not share one
+    session when both are DB-backed. Use this for one of them; the primary
+    session from ``get_db_session`` covers everything else.
+    """
+    async with get_session_factory()() as session:
+        logger.debug("secondary_database_session_opened")
+        try:
+            yield session
+            await session.commit()
+        except Exception:
+            await session.rollback()
+            raise
+        finally:
+            logger.debug("secondary_database_session_closed")
 
 
 async def dispose_engine() -> None:

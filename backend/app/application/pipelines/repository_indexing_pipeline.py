@@ -112,7 +112,9 @@ class RepositoryIndexingPipeline:
             return self._build_result(context, success=False)
 
     async def _load_repository(self, context: PipelineContext, repository_id: UUID) -> Repository:
-        repository = await self._repository_service.get(repository_id)
+        # Ownership was already verified at the API boundary (see
+        # AuthorizedRepositoryDependency) before this pipeline was invoked.
+        repository = await self._repository_service.get_trusted(repository_id)
         context.repository = repository
         return repository
 
@@ -146,7 +148,7 @@ class RepositoryIndexingPipeline:
         url = clone_url or repository.url
         target = workspace / repository.name
         try:
-            await self._git_client.clone_shallow(url, branch, target)
+            await self._git_client.clone_shallow(url, branch or repository.default_branch, target)
         except Exception as exc:
             raise WorkspaceError(f"Failed to clone repository: {exc}") from exc
         return target

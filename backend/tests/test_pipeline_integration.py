@@ -35,7 +35,7 @@ class _FakeRepositoryService:
     record: Repository
     status_updates: list[tuple[RepositoryStatus, datetime | None]] = field(default_factory=list)
 
-    async def get(self, repository_id: UUID) -> Repository:
+    async def get_trusted(self, repository_id: UUID) -> Repository:
         if repository_id != self.record.id:
             from app.application.exceptions import EntityNotFoundError
 
@@ -182,6 +182,30 @@ class TestPipelineIndexStep:
         assert len(store.vector_entries) >= 1
         assert len(store.keyword_entries) >= 1
         assert len(store.metadata_entries) >= 1
+
+
+class TestPipelineClone:
+    """Verify the pipeline resolves the clone branch correctly."""
+
+    @pytest.mark.asyncio
+    async def test_clone_falls_back_to_repository_default_branch(
+        self, repository: Repository
+    ) -> None:
+        """Regression test: pipeline.execute() without an explicit branch override
+        must clone repository.default_branch, not pass None through to git."""
+        repository.default_branch = "develop"
+        repo_service = _fake_repo_service(repository)
+        git_client = AsyncMock()
+        pipeline = RepositoryIndexingPipeline(
+            repository_service=repo_service,  # type: ignore[arg-type]
+            git_client=git_client,
+        )
+
+        await pipeline.execute(repository.id)
+
+        git_client.clone_shallow.assert_awaited_once()
+        called_branch = git_client.clone_shallow.await_args.args[1]
+        assert called_branch == "develop"
 
 
 class TestPipelineStatusTransitions:

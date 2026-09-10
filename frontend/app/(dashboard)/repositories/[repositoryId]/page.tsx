@@ -188,7 +188,7 @@ export default function RepositoryOverviewPage() {
             <div className="flex flex-wrap gap-3">
               {canIndex && (
                 <Button
-                  variant="default"
+                  variant="primary"
                   className="gap-2"
                   disabled={indexMutation.isPending}
                   onClick={() => {

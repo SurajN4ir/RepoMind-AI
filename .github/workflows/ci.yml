@@ -1,0 +1,102 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+env:
+  PYTHON_VERSION: "3.13"
+  NODE_VERSION: "22"
+
+jobs:
+  backend:
+    name: Backend
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: repomind_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/repomind_test
+      TEST_DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/repomind_test
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      - name: Ruff
+        run: uv run ruff check backend
+
+      # Validates the full migration chain (0001 -> head) against an empty
+      # database. The postgres service container starts with no schema, so
+      # this is the first thing to touch it.
+      - name: Run Alembic migrations
+        run: uv run alembic upgrade head
+
+      - name: Run backend test suite
+        run: uv run pytest backend/tests -v
+
+      # The pgvector integration tests (backend/tests/modules/test_pgvector_repository.py)
+      # skip themselves when TEST_DATABASE_URL is unset. It's set above, so they
+      # should already have run as part of the full suite; this step re-runs them
+      # alone and fails loudly if they were skipped, so a CI config regression
+      # (e.g. TEST_DATABASE_URL silently dropped) can't pass unnoticed.
+      - name: Confirm pgvector integration tests executed
+        run: |
+          set -o pipefail
+          uv run pytest backend/tests/modules/test_pgvector_repository.py -v | tee pgvector-output.log
+          if grep -q "SKIPPED" pgvector-output.log; then
+            echo "::error::pgvector integration tests were skipped -- TEST_DATABASE_URL is not reaching pytest."
+            exit 1
+          fi
+
+  frontend:
+    name: Frontend
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: TypeScript
+        run: npm run typecheck
+
+      - name: ESLint
+        run: npm run lint
+
+      - name: Build
+        run: npm run build

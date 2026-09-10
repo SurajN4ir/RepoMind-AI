@@ -1,6 +1,7 @@
 """Alembic migration environment."""
 
 import asyncio
+import sys
 from logging.config import fileConfig
 
 from sqlalchemy import pool
@@ -63,4 +64,9 @@ async def run_migrations_online() -> None:
 if context.is_offline_mode():
     run_migrations_offline()
 else:
+    if sys.platform == "win32":
+        # psycopg's async driver cannot run on Windows's default ProactorEventLoop;
+        # it requires a SelectorEventLoop. No-op on Linux/Docker; only matters for
+        # running `alembic upgrade` natively on Windows against real PostgreSQL.
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
     asyncio.run(run_migrations_online())
